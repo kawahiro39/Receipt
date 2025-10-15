@@ -9,7 +9,7 @@ Vanlee Receipt AI を Bubble から利用する際の手順と、デプロイ後
    - `BUBBLE_API_KEY`
 2. Bubble 側で API Connector を設定し、上記キーを Bearer トークンとして送信できるようにします。
 3. FastAPI アプリの依存関係は `requirements.txt` に記載されています。ローカル検証時は `pip install -r requirements.txt` を実行してください。
-4. ローカル OCR を使用するには、システムに Tesseract OCR のネイティブバイナリをインストールする必要があります。Debian/Ubuntu 系の場合は次の手順を実行してください。
+4. Docker イメージには Tesseract OCR (英語データ含む) がバンドルされるようになりました。Cloud Run 等の本番環境では追加のネイティブ依存関係を用意する必要はありません。ローカルマシン上で直接アプリを実行する場合のみ、以下の手順を参考に Tesseract をインストールしてください。
 
    ```bash
    sudo apt-get update && sudo apt-get install -y tesseract-ocr
