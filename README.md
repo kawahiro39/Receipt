@@ -14,7 +14,7 @@
 ## 2. 環境変数
 | 変数名 | 必須 | 内容 |
 | --- | --- | --- |
-| `BUBBLE_API_BASE` | ✅ | `https://` から始まる Bubble Data API ベース URL（`/api/1.1` まで）。|
+| `BUBBLE_API_BASE` | ✅ | `https://` から始まる Bubble Data API ベース URL（`/api/1.1` まで。末尾に `/obj` を含んでいても可）。|
 | `BUBBLE_API_KEY` | ✅ | Bubble Data API の Bearer トークン。|
 | `OCR_ENGINE` | ✅ | 現状は `local` 固定。その他の値は起動時にエラー。|
 | `OCR_LANGUAGE` | ✅ | Tesseract の言語コード。推奨 `jpn+eng`。|
@@ -23,6 +23,8 @@
 | `TZ` | 任意 | タイムゾーン（推奨 `Asia/Tokyo`）。|
 
 未設定または不正な値の場合、起動時に例外を投げてサービスが立ち上がりません。
+
+`.env` ファイルが存在する場合は自動で読み込まれるため、環境変数を OS 側にエクスポートできない環境でも `.env` に上記キーを定義すれば 500 エラーを防げます。
 
 ## 3. エンドポイント仕様
 ### 3.1 `POST /ingest`

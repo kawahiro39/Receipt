@@ -4,12 +4,13 @@ Cloud Run 上の領収書解析サービスを Bubble から安全に利用す�
 
 ## 1. 事前準備
 1. Cloud Run のサービスに以下の環境変数を設定します。
-   - `BUBBLE_API_BASE`（例: `https://example.com/version-test/api/1.1`）
+   - `BUBBLE_API_BASE`（例: `https://example.com/version-test/api/1.1`。末尾に `/obj` が付いていても問題ありません）
    - `BUBBLE_API_KEY`
    - `OCR_ENGINE=local`
    - `OCR_LANGUAGE=jpn+eng`
    - `ADMIN_TOKEN=<管理者トークン>`
    - 必要に応じて `BUBBLE_SIGNATURE_SECRET` を設定し、Bubble 側の署名ヘッダと同期させてください。
+   - export が難しい環境では、同じ値を `.env` ファイルに記載してサービス直下に配置すれば自動で読み込まれます。
 2. Bubble の Privacy Rules で Receipt / Feedback / ModelVersion すべての Data API Create/Modify を許可します。開発 (version-test) と本番 (live) で URL・トークンを分離してください。
 3. ローカルで検証する場合は `pip install -r requirements.txt` の後、`uvicorn app.main:app --reload` で起動します。Tesseract (jpn/eng) がインストール済みであることが前提です。
 
@@ -97,5 +98,6 @@ HTTP 200 が返り `id` が含まれていれば Bubble 側の書き込み許可
 - **401 invalid_signature**: 署名ヘッダと `BUBBLE_SIGNATURE_SECRET` が一致しているか確認。
 - **424 bubble_write_failed**: Bubble 側の Privacy Rules や API キー、通信エラーを確認。
 - **422 ocr_decode_failed**: 画像が破損している可能性があります。OCR に入力できる形式へ再変換してください。
+- **500 Internal Server Error (起動直後)**: `.env` に必須キーを記載し忘れていないか、`BUBBLE_API_BASE` が `https://` で始まっているか確認。
 
 以上で Bubble と Cloud Run 間の受領書処理フローを構築できます。
