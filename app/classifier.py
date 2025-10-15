@@ -126,21 +126,30 @@ def partial_train(
         if payment:
             text_fragments.append(str(payment))
         texts.append("\n".join(part for part in text_fragments if part))
-        labels.append(sample.get("label") or "未分類")
+        label_value = sample.get("label")
+        labels.append(str(label_value) if label_value is not None else "未分類")
 
     vectorizer = build_or_load_vectorizer(existing_model.vectorizer if existing_model else None)
     classifier = build_classifier(existing_model.classifier if existing_model else None)
 
     if existing_model:
-        vectorizer.fit(texts)
+        transformed = vectorizer.transform(texts)
     else:
         vectorizer.fit(texts)
+        transformed = vectorizer.transform(texts)
 
-    transformed = vectorizer.transform(texts)
-    unique_labels = sorted({str(label) for label in labels})
-    classifier.partial_fit(transformed, labels, classes=np.array(unique_labels))
+    existing_class_labels = getattr(classifier, "classes_", None)
+    existing_label_set = (
+        {str(label) for label in existing_class_labels}
+        if existing_class_labels is not None
+        else set()
+    )
+    new_label_set = {str(label) for label in labels}
+    merged_labels = sorted(existing_label_set | new_label_set)
 
-    metrics["classes"] = unique_labels
+    classifier.partial_fit(transformed, labels, classes=np.array(merged_labels))
+
+    metrics["classes"] = merged_labels
     return ModelBundle(vectorizer=vectorizer, classifier=classifier), metrics
 
 
