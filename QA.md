@@ -31,3 +31,15 @@ curl \
 
 A successful test should return a 2xx status code and include a JSON payload
 from Bubble containing up to one `Receipt` record.
+
+## Docker Build Smoke Test
+
+Cloud Build expects a `Dockerfile` at the repository root. To validate the
+image locally (or within Cloud Build), run:
+
+```bash
+docker build -t receipt-ai:latest .
+```
+
+The build uses `requirements.txt` to install dependencies and exposes the
+FastAPI service via Uvicorn on port `8080`.
