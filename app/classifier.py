@@ -44,21 +44,16 @@ def build_classifier(existing: Optional[SGDClassifier] = None) -> SGDClassifier:
 
 def _compose_text(features: TextFeatures) -> str:
     parts = [features.get("raw_text") or ""]
-    vendor = features.get("vendor")
-    if isinstance(vendor, dict):
-        vendor = vendor.get("value")
-    if vendor:
-        parts.append(str(vendor))
-    total = features.get("total")
-    if isinstance(total, dict):
-        total = total.get("value")
-    if total is not None:
-        parts.append(str(total))
-    payment = features.get("payment_method")
-    if isinstance(payment, dict):
-        payment = payment.get("value")
-    if payment:
-        parts.append(str(payment))
+    merchant = features.get("merchant")
+    if isinstance(merchant, dict):
+        merchant = merchant.get("value")
+    if merchant:
+        parts.append(str(merchant))
+    amount = features.get("amount")
+    if isinstance(amount, dict):
+        amount = amount.get("value")
+    if amount is not None:
+        parts.append(str(amount))
     return "\n".join(part for part in parts if part)
 
 
@@ -116,15 +111,12 @@ def partial_train(
     labels = []
     for sample in sample_list:
         text_fragments = [sample.get("text") or ""]
-        vendor = sample.get("vendor")
-        if vendor:
-            text_fragments.append(str(vendor))
-        total = sample.get("total")
-        if total is not None:
-            text_fragments.append(str(total))
-        payment = sample.get("payment_method")
-        if payment:
-            text_fragments.append(str(payment))
+        merchant = sample.get("merchant")
+        if merchant:
+            text_fragments.append(str(merchant))
+        amount = sample.get("amount")
+        if amount is not None:
+            text_fragments.append(str(amount))
         texts.append("\n".join(part for part in text_fragments if part))
         label_value = sample.get("label")
         labels.append(str(label_value) if label_value is not None else "未分類")

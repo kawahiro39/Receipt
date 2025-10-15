@@ -1,133 +1,101 @@
 # QA / 運用マニュアル
 
-Vanlee Receipt AI を Bubble から利用する際の手順と、デプロイ後の動作確認方法をまとめています。Cloud Run で FastAPI アプリを稼働させ、Bubble 側から API Connector などでエンドポイントを呼び出すことを前提としています。
+Cloud Run 上の領収書解析サービスを Bubble から安全に利用するための手順をまとめます。本書は `/ingest` → `/feedback` → `/train` のフローを前提としています。
 
 ## 1. 事前準備
-
-1. Cloud Run 側で以下の環境変数または Secret を設定します。
-   - `BUBBLE_API_BASE` (例: `https://system.vanlee.co.jp/version-test/api/1.1`)
+1. Cloud Run のサービスに以下の環境変数を設定します。
+   - `BUBBLE_API_BASE`（例: `https://example.com/version-test/api/1.1`）
    - `BUBBLE_API_KEY`
-2. Bubble 側で API Connector を設定し、上記キーを Bearer トークンとして送信できるようにします。
-3. FastAPI アプリの依存関係は `requirements.txt` に記載されています。ローカル検証時は `pip install -r requirements.txt` を実行してください。
-4. Docker イメージには Tesseract OCR（英語・日本語データ同梱）がバンドルされるようになりました。Cloud Run 等の本番環境では追加のネイティブ依存関係を用意する必要はありません。ローカルマシン上で直接アプリを実行する場合のみ、以下の手順を参考に Tesseract をインストールしてください。
-
-   ```bash
-   sudo apt-get update && sudo apt-get install -y \
-     tesseract-ocr \
-     tesseract-ocr-eng \
-     tesseract-ocr-jpn
-   ```
-
-   必要に応じて `OCR_LANGUAGE` 環境変数を `"jpn"` などに設定すると、日本語 OCR モードを強制できます。
+   - `OCR_ENGINE=local`
+   - `OCR_LANGUAGE=jpn+eng`
+   - `ADMIN_TOKEN=<管理者トークン>`
+   - 必要に応じて `BUBBLE_SIGNATURE_SECRET` を設定し、Bubble 側の署名ヘッダと同期させてください。
+2. Bubble の Privacy Rules で Receipt / Feedback / ModelVersion すべての Data API Create/Modify を許可します。開発 (version-test) と本番 (live) で URL・トークンを分離してください。
+3. ローカルで検証する場合は `pip install -r requirements.txt` の後、`uvicorn app.main:app --reload` で起動します。Tesseract (jpn/eng) がインストール済みであることが前提です。
 
 ## 2. Bubble Data API 接続テスト
-
-Bubble の Data API へアクセスできることを確認します。以下はリポジトリルートで実行する Python スクリプトの例です（`requests` がインストールされ、アウトバウンド通信が許可されている必要があります）。
-
-```bash
-BUBBLE_API_KEY="<your-api-key>" \
-BUBBLE_API_BASE="https://system.vanlee.co.jp/version-test/api/1.1" \
-python - <<'PY'
-from app import bubble_client
-
-response = bubble_client.bubble_search(
-    "Receipt",
-    limit=1,
-)
-print(response)
-PY
-```
-
-`curl` を利用する場合は次のように実行します。
+`/bubble-write-test` を利用するか、以下のコマンドで直接確認できます。
 
 ```bash
 curl \
+  -X POST \
   -H "Authorization: Bearer ${BUBBLE_API_KEY}" \
   -H "Content-Type: application/json" \
-  "${BUBBLE_API_BASE:-https://system.vanlee.co.jp/version-test/api/1.1}/obj/Receipt?limit=1"
+  "${BUBBLE_API_BASE}/obj/Receipt" \
+  -d '{"status": "predicted", "source": "manual-check"}'
 ```
 
-いずれも 2xx が返り、`Receipt` データタイプの JSON が得られれば成功です。
+HTTP 200 が返り `id` が含まれていれば Bubble 側の書き込み許可は問題ありません。
 
-## 3. FastAPI エンドポイントの利用方法
-
-Bubble のワークフローから以下のエンドポイントを呼び出してください。すべて `Content-Type: application/json` の POST リクエストです。
-
-### 3.1 `/predict`
-- 目的: 領収書画像から項目抽出と勘定科目推定を行い、必要に応じて Bubble 上の Receipt を作成/更新します。
-- 入力例:
+## 3. FastAPI エンドポイントの利用
+### 3.1 `/ingest`
+- Bubble Workflow から `multipart/form-data` でファイルを送信します。
+- `Idempotency-Key` を付与すると重複送信時に同じ `doc_id` が返ります。
+- 署名を利用する場合は `X-Bubble-Signature: hmac=<base64>` を付与し、サーバ側に `BUBBLE_SIGNATURE_SECRET` を設定してください。
+- 正常レスポンス例:
   ```json
   {
-    "image_url": "https://example.com/receipt.jpg"
+    "doc_id": "161234567890x",
+    "extracted": {
+      "date": "2024-10-01",
+      "amount": 2800.0,
+      "merchant": "カフェABC",
+      "category": "会議費"
+    },
+    "candidates": {
+      "amount": [{"value": 2800.0, "raw_text": "2,800", "confidence": 0.9}],
+      "category": [{"label": "会議費", "confidence": 0.74}]
+    }
   }
   ```
-- doc_id はサーバー側で `r_<YYYYMMDD>_<6桁ランダム英数字>` 形式に自動採番されます。
-- 出力例: 抽出結果 (`extracted`)、推定カテゴリ (`category`)、使用モデル (`model_version`)、Bubble へ upsert した Receipt の `_id` (`receipt_id`) を含む JSON。
-- Bubble 側では API Connector のアクションを作成し、レスポンスで返る `category.pred` 等をワークフローに渡す想定です。
+- Bubble ではレスポンスの `doc_id` を Receipt の id として保持してください。
 
 ### 3.2 `/feedback`
-- 目的: ユーザーが修正した情報を Bubble 上の Feedback として保存し、該当 Receipt のステータスを `corrected` に更新します。
-- 入力例:
+- 修正フォームなどから JSON を送信します。
+- リクエスト例:
   ```json
   {
-    "receipt_id": "<Bubble Receipt _id>",
-    "doc_id": "r_20251015_0001",
-    "correct": {
-      "category": "事務用品費",
-      "vendor": "デンキチ",
-      "date": "2025-10-12",
-      "total": 36990
-    },
-    "reason": "用紙と電池の購入"
+    "doc_id": "161234567890x",
+    "patch": {
+      "amount": {"value": 3000, "bbox": [100, 200, 260, 240]},
+      "category": "会議費"
+    }
   }
   ```
-- 出力: `{ "ok": true }`
-- Bubble 側では修正フォーム送信時に呼び出し、レスポンスをトースト表示などで案内する運用を想定しています。
+- サーバは Receipt を更新し、`Feedback` レコードをフィールドごとに生成します。
+- レスポンス例: `{ "status": "ok", "feedback_ids": ["1689"], "updated_doc_id": "161234567890x" }`
 
 ### 3.3 `/train`
-- 目的: 蓄積した Feedback を取得し、モデルを追加学習したうえで Bubble の ModelVersion に保存します。
-- 入力例:
+- 管理者ワークフロー (Scheduler or Manual) から `Authorization: Bearer <ADMIN_TOKEN>` を付けて呼び出します。
+- 例:
+  ```bash
+  curl \
+    -X POST \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{"task": "category", "min_samples": 50}' \
+    https://<service-url>/train
+  ```
+- レスポンス例:
   ```json
   {
-    "since": "2025-10-01T00:00:00Z",
-    "min_samples": 50
+    "trained": {"category": 120},
+    "metrics": {"category": {"n": 120, "classes": ["会議費", "交際費"]}},
+    "model_version_ids": {"category": "1700123456789"}
   }
   ```
-- 出力例:
-  ```json
-  {
-    "ok": true,
-    "model_version": "sgd-tfidf-2025-10-15T12:00",
-    "metrics": {"acc": 0.89, "n": 1203}
-  }
-  ```
-- Bubble 管理者用のワークフロー（スケジュール API Workflow 等）から定期的に実行することを推奨します。
+- `trained` 件数が 0 の場合、`metrics.reason` にスキップ理由が入ります。
 
-## 4. デプロイ後の動作確認
-
-### 4.1 Cloud Run へのデプロイ
-Cloud Build / Cloud Run でデプロイする際は、リポジトリルートに配置した `Dockerfile` が使用されます。手元でビルドを検証する場合は以下を実行してください。
-
-```bash
-docker build -t receipt-ai:latest .
-```
-
-ビルドが成功すると、FastAPI アプリがポート `8080` で起動するコンテナイメージが作成されます。
-
-### 4.2 ヘルスチェック
-Cloud Run デプロイ後に次のコマンドで FastAPI の起動を確認できます。
-
-```bash
-curl -s https://<cloud-run-host>/predict -X POST -H "Content-Type: application/json" \
-  -d '{"image_url": "https://example.com/placeholder.jpg"}'
-```
-
-HTTP 200 または 422（バリデーションエラー）が返ればアプリは起動しています。必要に応じてログを Cloud Logging で確認してください。
+## 4. 運用チェックリスト
+1. `/bubble-write-test` を定期的に実行し、Bubble 側の認証が切れていないか確認する。
+2. Cloud Logging で `ocr_confidence` や処理時間をモニタリングする。
+3. `/train` 実行後に `Feedback.processed_at` がセットされているか Bubble 側で確認する。
+4. `ModelVersion` の `is_latest` が最新の学習で切り替わったことを確認する。
 
 ## 5. トラブルシューティング
+- **400 unsupported_mime**: `file` の Content-Type を確認。PDF/JPEG/PNG/TIFF のみ受け付けます。
+- **401 invalid_signature**: 署名ヘッダと `BUBBLE_SIGNATURE_SECRET` が一致しているか確認。
+- **424 bubble_write_failed**: Bubble 側の Privacy Rules や API キー、通信エラーを確認。
+- **422 ocr_decode_failed**: 画像が破損している可能性があります。OCR に入力できる形式へ再変換してください。
 
-- **Dockerfile が見つからない**: Cloud Build の実行ログに `unable to evaluate symlinks in Dockerfile path` が出る場合、`Dockerfile` がリポジトリルートに存在することを確認してください。
-- **Bubble API エラー**: 401/403 が返る場合は API キーと Privacy Rules を再確認します。
-- **タイムアウト**: OCR や学習処理が長引く場合、Cloud Run のタイムアウト設定とログを確認し、必要に応じて処理を非同期化してください。
-
-以上を参考に、Bubble アプリから Vanlee Receipt AI を安定的に利用・運用してください。
+以上で Bubble と Cloud Run 間の受領書処理フローを構築できます。
