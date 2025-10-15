@@ -55,3 +55,120 @@ def test_extract_all_uses_pdf_pipeline(monkeypatch: pytest.MonkeyPatch, sample_t
 
     assert calls["pdf"] == 1
     assert result["vendor"]["value"] == "デンキチ"
+
+
+def test_perform_ocr_uses_local_engine(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeImage:
+        mode = "L"
+
+        def load(self) -> None:
+            captured["loaded"] = True
+
+        def convert(self, mode: str) -> "FakeImage":
+            captured["converted_to"] = mode
+            self.mode = mode
+            return self
+
+    class FakeImageModule:
+        @staticmethod
+        def open(_: Any) -> FakeImage:
+            captured["opened"] = True
+            return FakeImage()
+
+    class FakeTesseractError(Exception):
+        pass
+
+    class FakePytesseract:
+        TesseractError = FakeTesseractError
+        TesseractNotFoundError = FakeTesseractError
+
+        @staticmethod
+        def image_to_string(image: FakeImage, lang: str) -> str:
+            captured["lang"] = lang
+            captured["image_mode"] = image.mode
+            return "Vanlee"
+
+    monkeypatch.setenv("OCR_ENGINE", "local")
+    monkeypatch.setenv("OCR_LANGUAGE", "eng")
+    monkeypatch.setattr(ocr_extract, "_PIL_AVAILABLE", True)
+    monkeypatch.setattr(ocr_extract, "_PYTESSERACT_AVAILABLE", True)
+    monkeypatch.setattr(ocr_extract, "Image", FakeImageModule)
+    monkeypatch.setattr(ocr_extract, "pytesseract", FakePytesseract)
+
+    text = ocr_extract._perform_ocr(b"fake-bytes")
+
+    assert text == "Vanlee"
+    assert captured["opened"] is True
+    assert captured["loaded"] is True
+    assert captured["converted_to"] == "RGB"
+    assert captured["image_mode"] == "RGB"
+    assert captured["lang"] == "eng"
+
+
+def test_ocr_local_reports_tesseract_errors(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeImage:
+        def load(self) -> None:  # pragma: no cover - simple stub
+            pass
+
+        def convert(self, mode: str) -> "FakeImage":  # pragma: no cover
+            return self
+
+    class FakeImageModule:
+        @staticmethod
+        def open(_: Any) -> FakeImage:  # pragma: no cover - simple stub
+            return FakeImage()
+
+    class FakeTesseractError(Exception):
+        pass
+
+    class FakeTesseractNotFoundError(FakeTesseractError):
+        pass
+
+    class FakePytesseract:
+        TesseractError = FakeTesseractError
+        TesseractNotFoundError = FakeTesseractNotFoundError
+
+        @staticmethod
+        def image_to_string(_: Any, lang: str) -> str:  # noqa: ARG001
+            raise FakeTesseractError("ocr failed")
+
+    monkeypatch.setattr(ocr_extract, "_PIL_AVAILABLE", True)
+    monkeypatch.setattr(ocr_extract, "_PYTESSERACT_AVAILABLE", True)
+    monkeypatch.setattr(ocr_extract, "Image", FakeImageModule)
+    monkeypatch.setattr(ocr_extract, "pytesseract", FakePytesseract)
+
+    with pytest.raises(ocr_extract.OCRServiceError) as excinfo:
+        ocr_extract._ocr_local(b"fake")
+
+    assert "tesseract_error" in str(excinfo.value)
+
+
+def test_ocr_local_rejects_invalid_images() -> None:
+    class FakeTesseractError(Exception):
+        pass
+
+    class FakePytesseract:
+        TesseractError = FakeTesseractError
+        TesseractNotFoundError = FakeTesseractError
+
+    class FakeImageModule:
+        @staticmethod
+        def open(_: Any) -> None:
+            raise ocr_extract.UnidentifiedImageError("bad image")
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(ocr_extract, "_PIL_AVAILABLE", True)
+    monkeypatch.setattr(ocr_extract, "_PYTESSERACT_AVAILABLE", True)
+    monkeypatch.setattr(ocr_extract, "Image", FakeImageModule)
+    monkeypatch.setattr(ocr_extract, "pytesseract", FakePytesseract)
+
+    with pytest.raises(ocr_extract.OCRDecodeError):
+        ocr_extract._ocr_local(b"bad")
+
+    monkeypatch.undo()
