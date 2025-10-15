@@ -26,9 +26,16 @@ class Settings:
 
     @classmethod
     def load(cls) -> "Settings":
-        base = cls._require_env("BUBBLE_API_BASE")
-        if not base.startswith("https://"):
+        raw_base = cls._require_env("BUBBLE_API_BASE")
+        if not raw_base.startswith("https://"):
             raise RuntimeError("BUBBLE_API_BASE must start with https://")
+        # Allow callers to pass either the `/api/1.1` base or the `/api/1.1/obj`
+        # collection root. The service always appends `/obj`, so we normalise the
+        # environment value to avoid generating URLs like `/obj/obj/...` when the
+        # caller already included it.
+        base = raw_base.rstrip("/")
+        if base.endswith("/obj"):
+            base = base[: -len("/obj")]
         bubble_api_base = base.rstrip("/")
 
         api_key = cls._require_env("BUBBLE_API_KEY")

@@ -4,7 +4,7 @@ Cloud Run 上の領収書解析サービスを Bubble から安全に利用す�
 
 ## 1. 事前準備
 1. Cloud Run のサービスに以下の環境変数を設定します。
-   - `BUBBLE_API_BASE`（例: `https://example.com/version-test/api/1.1`）
+   - `BUBBLE_API_BASE`（例: `https://example.com/version-test/api/1.1`。末尾に `/obj` が付いていても問題ありません）
    - `BUBBLE_API_KEY`
    - `OCR_ENGINE=local`
    - `OCR_LANGUAGE=jpn+eng`
