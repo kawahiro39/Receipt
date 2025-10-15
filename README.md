@@ -6,7 +6,7 @@ Vanlee Receipt AI は、Google Cloud Run 上で稼働する FastAPI 製の領収
 ## システム構成
 - **Cloud Run**: FastAPI アプリケーションを Docker コンテナとしてデプロイ。リクエストごとにスケールし、サーバレスで運用。
 - **Bubble Data API**: 伝票 (`Receipt`)、フィードバック (`Feedback`)、モデルバージョン (`ModelVersion`) の CRUD を担当。モデルトレーニング結果も Base64 化して Bubble に保存します。
-- **ローカル OCR エンジン**: コンテナ内に Tesseract（英語・日本語）をバンドルし、外部 OCR サービス無しで完結。
+- **OCR エンジン**: RapidOCR（ONNX Runtime）で日本語レシートに最適化した OCR を実行し、失敗時のみ Tesseract へフェイルバックします。
 
 ## 主なディレクトリ
 - `app/`
@@ -34,7 +34,7 @@ Vanlee Receipt AI は、Google Cloud Run 上で稼働する FastAPI 製の領収
 ## 技術的ポイント
 - **ステートレスなモデル保存**: Cloud Run のファイルシステムは揮発性のため、`pickle` 化したモデルを Base64 エンコードして Bubble にチャンク分割し保存。ロード時は自動で連結します。
 - **柔軟な検索ソート**: `bubble_search` は `sort_field` と `descending` を受け取り、最新の `ModelVersion` を確実に取得します。
-- **エラー設計**: OCR 取得失敗・デコード失敗・Bubble 通信失敗を個別の例外で分類し、HTTP ステータスにマッピング。
+- **エラー設計**: RapidOCR のエラーは自動で Tesseract にフェイルオーバーし、それでも失敗した場合は OCR 取得・デコード・Bubble 通信の各フェーズで異なる例外を投げて HTTP ステータスにマッピング。
 - **Cloud Run 運用前提**: すべての機能が REST API 経由で完結するため、永続ディスクやサードパーティへの依存は不要です。
 
 ## 環境変数
@@ -42,7 +42,7 @@ Vanlee Receipt AI は、Google Cloud Run 上で稼働する FastAPI 製の領収
 | --- | --- | --- |
 | `BUBBLE_API_BASE` | Bubble Data API のベース URL | 末尾の `/obj` の有無は自動調整 |
 | `BUBBLE_API_KEY` | Bubble Data API の認証トークン | 未設定時はリクエストを拒否 |
-| `OCR_ENGINE` | OCR エンジン種別（例: `local`） | 省略時は `local` |
+| `OCR_ENGINE` | OCR エンジン種別（`rapidocr` / `local`） | 省略時は `rapidocr` |
 | `OCR_LANGUAGE` | Tesseract 言語コード | 例: `eng`, `jpn` |
 
 ## ローカル開発 & テスト

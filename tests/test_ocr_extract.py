@@ -109,6 +109,28 @@ def test_perform_ocr_uses_local_engine(
     assert captured["lang"] == "eng"
 
 
+def test_perform_ocr_falls_back_when_rapidocr_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OCR_ENGINE", "rapidocr")
+
+    def boom(_: bytes) -> str:
+        raise ocr_extract.OCRServiceError("boom")
+
+    monkeypatch.setattr(ocr_extract, "_ocr_rapidocr", boom)
+
+    calls: dict[str, int] = {"local": 0}
+
+    def fake_local(_: bytes) -> str:
+        calls["local"] += 1
+        return "fallback"
+
+    monkeypatch.setattr(ocr_extract, "_ocr_local", fake_local)
+
+    text = ocr_extract._perform_ocr(b"fake")
+
+    assert text == "fallback"
+    assert calls["local"] == 1
+
+
 def test_ocr_local_reports_tesseract_errors(
     monkeypatch: pytest.MonkeyPatch
 ) -> None:
