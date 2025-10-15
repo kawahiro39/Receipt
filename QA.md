@@ -2,25 +2,32 @@
 
 ## Bubble Data API Smoke Test
 
-To verify connectivity with Bubble's Data API and the new helper functions, you can run:
+To verify connectivity with Bubble's Data API and the helper functions, run the
+following script from the repository root (after ensuring `requests` is
+installed and outbound network access is permitted):
 
 ```bash
+BUBBLE_API_KEY="<your-api-key>" \
+BUBBLE_API_BASE="https://system.vanlee.co.jp/version-test/api/1.1" \
 python - <<'PY'
-import requests
+from app import bubble_client
 
-response = requests.get(
-    "https://system.vanlee.co.jp/version-test/api/1.1/obj/Receipt",
-    headers={
-        "Authorization": "Bearer 99c107353970e7d1f2f1b36709cd3e04",
-        "Content-Type": "application/json",
-    },
-    params={"limit": 1},
-    timeout=20,
+response = bubble_client.bubble_search(
+    "Receipt",
+    limit=1,
 )
-print(response.status_code)
-response.raise_for_status()
-print(response.json())
+print(response)
 PY
 ```
 
-A successful test should print a 2xx status code followed by the JSON response body.
+Alternatively, you can use `curl`:
+
+```bash
+curl \
+  -H "Authorization: Bearer ${BUBBLE_API_KEY}" \
+  -H "Content-Type: application/json" \
+  "${BUBBLE_API_BASE:-https://system.vanlee.co.jp/version-test/api/1.1}/obj/Receipt?limit=1"
+```
+
+A successful test should return a 2xx status code and include a JSON payload
+from Bubble containing up to one `Receipt` record.
