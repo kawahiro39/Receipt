@@ -8,6 +8,8 @@ RUN apt-get update \
         tesseract-ocr \
         tesseract-ocr-eng \
         tesseract-ocr-jpn \
+        libgomp1 \
+        libgl1 \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir -r requirements.txt
 

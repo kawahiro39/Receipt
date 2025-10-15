@@ -131,6 +131,32 @@ def test_perform_ocr_falls_back_when_rapidocr_fails(monkeypatch: pytest.MonkeyPa
     assert calls["local"] == 1
 
 
+def test_ocr_rapidocr_handles_missing_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ocr_extract, "_RAPIDOCR_AVAILABLE", False)
+    monkeypatch.setattr(ocr_extract, "RapidOCR", None)
+    monkeypatch.setattr(ocr_extract, "_RAPIDOCR_ENGINE", None)
+
+    with pytest.raises(ocr_extract.OCRServiceError) as excinfo:
+        ocr_extract._ocr_rapidocr(b"binary")
+
+    assert "rapidocr_not_installed" in str(excinfo.value)
+
+
+def test_get_rapidocr_wraps_initialisation_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeRapidOCR:
+        def __init__(self, **_: Any) -> None:
+            raise RuntimeError("libgomp missing")
+
+    monkeypatch.setattr(ocr_extract, "RapidOCR", FakeRapidOCR)
+    monkeypatch.setattr(ocr_extract, "_RAPIDOCR_AVAILABLE", True)
+    monkeypatch.setattr(ocr_extract, "_RAPIDOCR_ENGINE", None)
+
+    with pytest.raises(ocr_extract.OCRServiceError) as excinfo:
+        ocr_extract._get_rapidocr()
+
+    assert "rapidocr_initialization_failed" in str(excinfo.value)
+
+
 def test_ocr_local_reports_tesseract_errors(
     monkeypatch: pytest.MonkeyPatch
 ) -> None:

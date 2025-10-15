@@ -16,7 +16,7 @@ Vanlee Receipt AI は、Google Cloud Run 上で稼働する FastAPI 製の領収
   - `bubble_client.py`: Bubble Data API の薄いクライアント。認証ヘッダーやタイムアウトを集約。
   - `model_store.py`: Bubble 上の `ModelVersion` にモデルを Base64 で保存／取得するユーティリティ。
 - `tests/`: pytest ベースのユニットテスト。
-- `Dockerfile`: Cloud Run 向けビルドレシピ。Tesseract のインストールも含む。
+- `Dockerfile`: Cloud Run 向けビルドレシピ。Tesseract に加えて RapidOCR が必要とする `libgomp1`・`libgl1` もインストールします。
 
 ## エンドポイント
 ### `POST /predict`

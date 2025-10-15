@@ -43,11 +43,15 @@ if _PDFMINER_AVAILABLE:
 else:  # pragma: no cover - pdfminer missing in runtime environment
     extract_text = None  # type: ignore[assignment]
 
-_RAPIDOCR_AVAILABLE = importlib.util.find_spec("rapidocr_onnxruntime") is not None
-if _RAPIDOCR_AVAILABLE:
+try:  # pragma: no branch - guarded import for optional dependency
     from rapidocr_onnxruntime import RapidOCR  # type: ignore
-else:  # pragma: no cover - rapidocr missing in runtime environment
+except Exception as exc:  # pragma: no cover - handled at runtime
     RapidOCR = None  # type: ignore[assignment]
+    _RAPIDOCR_IMPORT_ERROR = exc
+else:  # pragma: no cover - import succeeded
+    _RAPIDOCR_IMPORT_ERROR = None
+
+_RAPIDOCR_AVAILABLE = RapidOCR is not None
 
 _NUMPY_AVAILABLE = importlib.util.find_spec("numpy") is not None
 if _NUMPY_AVAILABLE:
@@ -296,6 +300,12 @@ def _ocr_local(binary: bytes) -> str:
 
 def _ocr_rapidocr(binary: bytes) -> str:
     if not _RAPIDOCR_AVAILABLE or RapidOCR is None:
+        if '_RAPIDOCR_IMPORT_ERROR' in globals() and _RAPIDOCR_IMPORT_ERROR is not None:
+            LOGGER.warning(
+                "rapidocr_import_failed: %s",
+                _RAPIDOCR_IMPORT_ERROR,
+                exc_info=LOGGER.isEnabledFor(logging.DEBUG),
+            )
         raise OCRServiceError("rapidocr_not_installed")
     if not _NUMPY_AVAILABLE or np is None:
         raise OCRServiceError("rapidocr_numpy_missing")
@@ -331,7 +341,19 @@ def _ocr_rapidocr(binary: bytes) -> str:
 def _get_rapidocr() -> RapidOCR:
     global _RAPIDOCR_ENGINE
     if _RAPIDOCR_ENGINE is None:
-        _RAPIDOCR_ENGINE = RapidOCR(det_use_cuda=False, rec_use_cuda=False, cls_use_cuda=False)
+        try:
+            _RAPIDOCR_ENGINE = RapidOCR(
+                det_use_cuda=False,
+                rec_use_cuda=False,
+                cls_use_cuda=False,
+            )
+        except Exception as exc:  # pragma: no cover - rapidocr initialisation failure
+            LOGGER.warning(
+                "rapidocr_initialization_failed: %s",
+                exc,
+                exc_info=LOGGER.isEnabledFor(logging.DEBUG),
+            )
+            raise OCRServiceError("rapidocr_initialization_failed") from exc
     return _RAPIDOCR_ENGINE
 
 
