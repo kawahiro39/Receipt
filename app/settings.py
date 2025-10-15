@@ -4,7 +4,10 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Optional
+
+from dotenv import load_dotenv
 
 
 @dataclass(frozen=True)
@@ -26,9 +29,17 @@ class Settings:
 
     @classmethod
     def load(cls) -> "Settings":
-        base = cls._require_env("BUBBLE_API_BASE")
-        if not base.startswith("https://"):
+        _ensure_env_file_loaded()
+        raw_base = cls._require_env("BUBBLE_API_BASE")
+        if not raw_base.startswith("https://"):
             raise RuntimeError("BUBBLE_API_BASE must start with https://")
+        # Allow callers to pass either the `/api/1.1` base or the `/api/1.1/obj`
+        # collection root. The service always appends `/obj`, so we normalise the
+        # environment value to avoid generating URLs like `/obj/obj/...` when the
+        # caller already included it.
+        base = raw_base.rstrip("/")
+        if base.endswith("/obj"):
+            base = base[: -len("/obj")]
         bubble_api_base = base.rstrip("/")
 
         api_key = cls._require_env("BUBBLE_API_KEY")
@@ -57,4 +68,29 @@ def get_settings() -> Settings:
     return Settings.load()
 
 
-__all__ = ["Settings", "get_settings"]
+def reset_settings_state() -> None:
+    """Reset cached settings and environment file state (for tests)."""
+    global _ENV_FILE_LOADED
+    _ENV_FILE_LOADED = False
+    get_settings.cache_clear()
+
+
+_ENV_FILE_LOADED = False
+
+
+def _ensure_env_file_loaded() -> None:
+    global _ENV_FILE_LOADED
+    if _ENV_FILE_LOADED:
+        return
+    candidates = [Path.cwd() / ".env", Path(__file__).resolve().parent.parent / ".env"]
+    loaded = False
+    for env_path in candidates:
+        if env_path.exists():
+            load_dotenv(dotenv_path=env_path, override=False)
+            loaded = True
+    if not loaded:
+        load_dotenv(override=False)
+    _ENV_FILE_LOADED = True
+
+
+__all__ = ["Settings", "get_settings", "reset_settings_state"]

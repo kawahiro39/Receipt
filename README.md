@@ -14,7 +14,7 @@
 ## 2. 環境変数
 | 変数名 | 必須 | 内容 |
 | --- | --- | --- |
-| `BUBBLE_API_BASE` | ✅ | `https://` から始まる Bubble Data API ベース URL（`/api/1.1` まで）。|
+| `BUBBLE_API_BASE` | ✅ | `https://` から始まる Bubble Data API ベース URL（`/api/1.1` まで。末尾に `/obj` を含んでいても可）。|
 | `BUBBLE_API_KEY` | ✅ | Bubble Data API の Bearer トークン。|
 | `OCR_ENGINE` | ✅ | 現状は `local` 固定。その他の値は起動時にエラー。|
 | `OCR_LANGUAGE` | ✅ | Tesseract の言語コード。推奨 `jpn+eng`。|
@@ -23,6 +23,20 @@
 | `TZ` | 任意 | タイムゾーン（推奨 `Asia/Tokyo`）。|
 
 未設定または不正な値の場合、起動時に例外を投げてサービスが立ち上がりません。
+
+`.env` ファイルが存在する場合は自動で読み込まれるため、環境変数を OS 側にエクスポートできない環境でも `.env` に上記キーを定義すれば 500 エラーを防げます。
+
+### 2.1 Bubble API Connector の設定値
+Bubble の「API Connector」プラグインから FastAPI サービスに接続する場合は、以下の値をそのまま利用できます。
+
+| 項目 | 設定例 |
+| --- | --- |
+| API 名 | `Receipt API` |
+| ベース URL | `https://system.vanlee.co.jp/version-test/api/1.1` |
+| 認証ヘッダ | `Authorization: Bearer 99c107353970e7d1f2f1b36709cd3e04` |
+| エンドポイント (POST) | `/obj/Receipt`、`/obj/Feedback`、`/obj/ModelVersion` |
+
+FastAPI サービス側では同じ URL/キーを `BUBBLE_API_BASE`・`BUBBLE_API_KEY` に設定してください。開発環境で別の URL やキーを利用する場合は、Connector 側のバージョン管理機能でプロファイルを分けると安全です。
 
 ## 3. エンドポイント仕様
 ### 3.1 `POST /ingest`
@@ -105,6 +119,7 @@ uvicorn app.main:app --reload
 ## 7. プライバシー / Bubble 設定メモ
 - Bubble 側で Receipt / Feedback / ModelVersion の Data API を有効化し、API トークンで Create/Modify を許可する Privacy Rules を設定してください。
 - 開発環境（`version-test`）と本番環境（`live`）で URL とトークンを分離します。
+- Bubble 側での詳細な運用手順は [`docs/bubble_operations.md`](docs/bubble_operations.md) を参照してください。
 
 ## 8. ログと監視の推奨指標
 - OCR 平均信頼度 (`ocr_confidence`)
