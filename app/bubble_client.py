@@ -18,7 +18,7 @@ from typing import Any, Dict, Iterable, Mapping, Optional
 import requests
 
 DEFAULT_BASE_URL = "https://system.vanlee.co.jp/version-test/api/1.1/obj"
-DEFAULT_API_KEY = "99c107353970e7d1f2f1b36709cd3e04"
+DEFAULT_API_KEY = ""
 TIMEOUT = 20
 
 JsonDict = Dict[str, Any]
@@ -88,6 +88,8 @@ def bubble_search(
     constraints: Optional[Iterable[Mapping[str, Any]]] = None,
     limit: Optional[int] = None,
     cursor: Optional[str] = None,
+    sort_field: Optional[str] = None,
+    descending: bool = True,
 ) -> JsonDict:
     """Search for Bubble objects with optional constraints, pagination limit, and cursor."""
 
@@ -98,6 +100,9 @@ def bubble_search(
         params["limit"] = limit
     if cursor is not None:
         params["cursor"] = cursor
+    if sort_field:
+        params["sort_field"] = sort_field
+        params["descending"] = "yes" if descending else "no"
 
     return _request("GET", f"obj/{type_name}", params=params)
 

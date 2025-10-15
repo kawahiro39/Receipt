@@ -1,4 +1,12 @@
-"""Utilities for storing and retrieving model versions from Bubble."""
+"""Model persistence utilities backed exclusively by the Bubble Data API.
+
+The service runs on Cloud Run, which offers only ephemeral local storage.  In
+order to keep both training and inference stateless, trained scikit-learn
+artifacts are serialized into Bubble's ``ModelVersion`` data type.  This module
+encapsulates that interaction so the rest of the application can treat the
+model store as a simple load/save interface.
+"""
+
 from __future__ import annotations
 
 import base64
@@ -6,7 +14,7 @@ import json
 import logging
 import pickle
 from datetime import datetime
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import bubble_client
 from .classifier import ModelBundle
@@ -52,7 +60,12 @@ def load_latest_model() -> Tuple[Optional[ModelBundle], Optional[str]]:
     """Fetch and deserialize the most recent model version."""
 
     try:
-        response = bubble_client.bubble_search(MODEL_TYPE, limit=1)
+        response = bubble_client.bubble_search(
+            MODEL_TYPE,
+            limit=1,
+            sort_field="Created Date",
+            descending=True,
+        )
     except Exception as exc:  # pragma: no cover - defensive for network errors
         LOGGER.warning("Unable to query model versions: %s", exc)
         return None, None
