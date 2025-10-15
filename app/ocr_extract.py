@@ -5,14 +5,13 @@ provides a real OCR pipeline that downloads the requested image/PDF, runs it
 through an OCR engine, and parses the recognised text into the structured
 ``ExtractionResult`` schema used by the API.
 
-The OCR engine currently supports Google Cloud Vision's ``images:annotate``
-endpoint via an API key supplied through ``GOOGLE_VISION_API_KEY``.  The
-implementation is intentionally pluggable so that alternative providers can be
-introduced by extending ``_perform_ocr``.
+The OCR engine uses a local Tesseract backend by default.  Additional engines
+can be introduced by extending ``_perform_ocr``.
 """
 from __future__ import annotations
 
 import base64
+import importlib.util
 import logging
 import os
 import re
@@ -21,15 +20,32 @@ from io import BytesIO
 from typing import Any, Dict, Iterable, Optional, Tuple, Union
 
 import requests
-from pdfminer.high_level import extract_text
+
+_PIL_AVAILABLE = importlib.util.find_spec("PIL") is not None
+if _PIL_AVAILABLE:
+    from PIL import Image, UnidentifiedImageError
+else:  # pragma: no cover - pillow missing in runtime environment
+    Image = Any  # type: ignore[assignment]
+
+    class UnidentifiedImageError(Exception):
+        """Fallback error when Pillow is unavailable."""
+
+_PYTESSERACT_AVAILABLE = importlib.util.find_spec("pytesseract") is not None
+if _PYTESSERACT_AVAILABLE:
+    import pytesseract
+else:  # pragma: no cover - pytesseract missing in runtime environment
+    pytesseract = None  # type: ignore[assignment]
+
+_PDFMINER_AVAILABLE = importlib.util.find_spec("pdfminer") is not None
+if _PDFMINER_AVAILABLE:
+    from pdfminer.high_level import extract_text
+else:  # pragma: no cover - pdfminer missing in runtime environment
+    extract_text = None  # type: ignore[assignment]
 
 LOGGER = logging.getLogger(__name__)
 
 ExtractionResult = Dict[str, Any]
 
-OCR_ENDPOINT = os.getenv(
-    "GOOGLE_VISION_ENDPOINT", "https://vision.googleapis.com/v1/images:annotate"
-)
 OCR_TIMEOUT = 30
 
 
@@ -103,6 +119,8 @@ def _is_pdf(binary: bytes) -> bool:
 
 
 def _extract_text_from_pdf(binary: bytes) -> str:
+    if not _PDFMINER_AVAILABLE or extract_text is None:
+        raise OCRServiceError("pdfminer_not_installed")
     try:
         return extract_text(BytesIO(binary))
     except Exception as exc:  # pragma: no cover - pdfminer internal failures
@@ -110,46 +128,38 @@ def _extract_text_from_pdf(binary: bytes) -> str:
 
 
 def _perform_ocr(binary: bytes) -> str:
-    engine = os.getenv("OCR_ENGINE", "google").strip().lower() or "google"
-    if engine == "google":
-        return _ocr_google(binary)
+    engine = os.getenv("OCR_ENGINE", "local").strip().lower() or "local"
+    if engine == "local":
+        return _ocr_local(binary)
     raise OCRServiceError(f"unknown_ocr_engine:{engine}")
 
 
-def _ocr_google(binary: bytes) -> str:
-    api_key = os.getenv("GOOGLE_VISION_API_KEY")
-    if not api_key:
-        raise OCRServiceError("missing_google_vision_api_key")
-
-    payload = {
-        "requests": [
-            {
-                "image": {"content": base64.b64encode(binary).decode("ascii")},
-                "features": [{"type": "TEXT_DETECTION"}],
-            }
-        ]
-    }
-
+def _ocr_local(binary: bytes) -> str:
+    if not _PYTESSERACT_AVAILABLE:
+        raise OCRServiceError("pytesseract_not_installed")
+    image = _image_from_bytes(binary)
+    language = os.getenv("OCR_LANGUAGE", "eng").strip() or "eng"
     try:
-        response = requests.post(
-            f"{OCR_ENDPOINT}?key={api_key}", json=payload, timeout=OCR_TIMEOUT
-        )
-        response.raise_for_status()
-    except requests.RequestException as exc:  # pragma: no cover - network
-        raise OCRServiceError("google_vision_request_failed") from exc
+        return pytesseract.image_to_string(image, lang=language)
+    except pytesseract.TesseractNotFoundError as exc:
+        raise OCRServiceError("tesseract_not_found") from exc
+    except pytesseract.TesseractError as exc:
+        raise OCRServiceError(f"tesseract_error:{exc}") from exc
+    except Exception as exc:  # pragma: no cover - unexpected pytesseract failure
+        raise OCRServiceError("tesseract_unknown_error") from exc
 
-    data = response.json()
+
+def _image_from_bytes(binary: bytes) -> Image.Image:
+    if not _PIL_AVAILABLE:
+        raise OCRServiceError("pillow_not_installed")
     try:
-        annotations = data["responses"][0]
-    except (KeyError, IndexError, TypeError) as exc:
-        raise OCRServiceError("google_vision_unexpected_response") from exc
-
-    full_text = (
-        annotations.get("fullTextAnnotation", {}).get("text")
-        or annotations.get("textAnnotations", [{}])[0].get("description")
-        or ""
-    )
-    return str(full_text)
+        image = Image.open(BytesIO(binary))
+        image.load()
+    except UnidentifiedImageError as exc:
+        raise OCRDecodeError("unsupported_image_format") from exc
+    except Exception as exc:  # pragma: no cover - pillow internal failures
+        raise OCRServiceError("image_open_failed") from exc
+    return image.convert("RGB")
 
 
 def _parse_receipt_text(raw_text: str) -> ExtractionResult:
@@ -195,6 +205,9 @@ def _extract_total(lines: Iterable[str]) -> Tuple[Optional[int], float]:
     for line in lines:
         for match in amount_pattern.finditer(line):
             raw = match.group(1).replace(",", "")
+            start = match.start(1)
+            if start > 0 and line[start - 1].isalnum():
+                continue
             try:
                 value = int(raw)
             except ValueError:

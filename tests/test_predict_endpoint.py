@@ -7,12 +7,17 @@ import pytest
 from app.main import HTTPException, PredictRequest, predict
 
 
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
 @pytest.fixture(autouse=True)
 def reset_state(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.main._generate_doc_id", lambda: "r_20251015_ab12cd")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio("asyncio")
 async def test_predict_creates_receipt(monkeypatch: pytest.MonkeyPatch) -> None:
     extracted: Dict[str, Any] = {
         "raw_text": "デンキチ\n2025-10-10",
@@ -67,7 +72,7 @@ async def test_predict_creates_receipt(monkeypatch: pytest.MonkeyPatch) -> None:
     assert payload["status"] == "predicted"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio("asyncio")
 async def test_predict_requires_image_url() -> None:
     with pytest.raises(HTTPException) as exc:
         await predict(PredictRequest())
