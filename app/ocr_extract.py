@@ -17,6 +17,7 @@ import logging
 import os
 import re
 from datetime import datetime
+from io import BytesIO
 from typing import Any, Dict, Iterable, Optional, Tuple, Union
 
 import requests
@@ -103,7 +104,7 @@ def _is_pdf(binary: bytes) -> bool:
 
 def _extract_text_from_pdf(binary: bytes) -> str:
     try:
-        return extract_text(binary)
+        return extract_text(BytesIO(binary))
     except Exception as exc:  # pragma: no cover - pdfminer internal failures
         raise OCRDecodeError("pdf_text_extraction_failed") from exc
 
