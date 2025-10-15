@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, Mapping, Optional
 
 import requests
 
-DEFAULT_BASE_URL = "https://system.vanlee.co.jp/version-test/api/1.1"
+DEFAULT_BASE_URL = "https://system.vanlee.co.jp/version-test/api/1.1/obj"
 DEFAULT_API_KEY = "99c107353970e7d1f2f1b36709cd3e04"
 TIMEOUT = 20
 
