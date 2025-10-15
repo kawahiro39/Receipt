@@ -48,13 +48,11 @@ Bubble のワークフローから以下のエンドポイントを呼び出し�
 - 入力例:
   ```json
   {
-    "doc_id": "r_20251015_0001",
-    "image_url": "https://example.com/receipt.jpg",
-    "image_base64": null,
-    "hint": {"tax_rate": 0.1}
+    "image_url": "https://example.com/receipt.jpg"
   }
   ```
-- 出力例: 抽出結果 (`extracted`)、推定カテゴリ (`category`)、使用モデル (`model_version`) を含む JSON。
+- doc_id はサーバー側で `r_<YYYYMMDD>_<6桁ランダム英数字>` 形式に自動採番されます。
+- 出力例: 抽出結果 (`extracted`)、推定カテゴリ (`category`)、使用モデル (`model_version`)、Bubble へ upsert した Receipt の `_id` (`receipt_id`) を含む JSON。
 - Bubble 側では API Connector のアクションを作成し、レスポンスで返る `category.pred` 等をワークフローに渡す想定です。
 
 ### 3.2 `/feedback`
@@ -111,7 +109,7 @@ Cloud Run デプロイ後に次のコマンドで FastAPI の起動を確認で�
 
 ```bash
 curl -s https://<cloud-run-host>/predict -X POST -H "Content-Type: application/json" \
-  -d '{"doc_id":"health-check","image_url":null,"image_base64":null,"hint":null}'
+  -d '{"image_url": "https://example.com/placeholder.jpg"}'
 ```
 
 HTTP 200 または 422（バリデーションエラー）が返ればアプリは起動しています。必要に応じてログを Cloud Logging で確認してください。
