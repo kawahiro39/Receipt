@@ -4,7 +4,10 @@ This module centralizes HTTP interactions with Bubble's Data API while keeping
 request defaults (base URL, credentials, headers, timeout) in one place. The
 API key and base URL can be overridden via the ``BUBBLE_API_KEY`` and
 ``BUBBLE_API_BASE`` environment variables respectively, enabling secret
-management in deployment environments such as Cloud Run.
+management in deployment environments such as Cloud Run. ``BUBBLE_API_BASE``
+may include either ``.../api/1.1`` or ``.../api/1.1/obj``—the client
+normalizes either format to avoid generating duplicate ``/obj`` segments in
+request URLs.
 """
 from __future__ import annotations
 
@@ -29,7 +32,12 @@ def _base_url() -> str:
     base = os.getenv("BUBBLE_API_BASE", DEFAULT_BASE_URL).strip()
     if not base:
         raise BubbleClientError("BUBBLE_API_BASE must not be empty")
-    return base.rstrip("/")
+
+    trimmed = base.rstrip("/")
+    if trimmed.endswith("/obj"):
+        trimmed = trimmed[: -len("/obj")]
+
+    return trimmed
 
 
 def _headers() -> Dict[str, str]:
